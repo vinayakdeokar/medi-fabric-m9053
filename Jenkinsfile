@@ -15,20 +15,7 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                echo "Checking out repository..."
                 checkout scm
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                    if ! command -v jq &> /dev/null
-                    then
-                        echo "Installing jq..."
-                        apt-get update && apt-get install -y jq
-                    fi
-                '''
             }
         }
 
@@ -59,8 +46,6 @@ pipeline {
                 sh '''
                     TOKEN=$(cat token.txt)
 
-                    echo "Fetching workspace ID for: ${WORKSPACE_NAME}"
-
                     WORKSPACE_ID=$(curl -s -X GET \
                       -H "Authorization: Bearer $TOKEN" \
                       https://api.powerbi.com/v1.0/myorg/groups | \
@@ -77,11 +62,11 @@ pipeline {
             }
         }
 
-        stage('UAT Binding Validation') {
+        stage('Validation Complete') {
             steps {
                 sh '''
                     WORKSPACE_ID=$(cat workspace_id.txt)
-                    echo "Ready to deploy to Workspace ID: $WORKSPACE_ID"
+                    echo "UAT Workspace Binding Successful: $WORKSPACE_ID"
                 '''
             }
         }
@@ -89,7 +74,7 @@ pipeline {
 
     post {
         success {
-            echo "UAT Binding Validation Successful"
+            echo "Pipeline Succeeded"
         }
         failure {
             echo "Pipeline Failed"
