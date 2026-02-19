@@ -1,0 +1,37 @@
+table default
+	lineageTag: cee14f06-1680-4343-ad0f-82c49bee2fb8
+
+	column Name
+		dataType: string
+		lineageTag: 69ccec22-bd8e-4081-9516-8ea2e10fa5a5
+		summarizeBy: none
+		sourceColumn: Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Description
+		dataType: string
+		lineageTag: 4aa1c58f-9c15-46e0-a714-09dafcc41c62
+		summarizeBy: none
+		sourceColumn: Description
+
+		annotation SummarizationSetBy = Automatic
+
+	column Kind
+		dataType: string
+		lineageTag: fc0405ab-acef-4529-ad7b-73bc80373c97
+		summarizeBy: none
+		sourceColumn: Kind
+
+		annotation SummarizationSetBy = Automatic
+
+	partition default = m
+		mode: import
+		source =
+				let
+				  Source = Databricks.Catalogs("adb-7405609873418273.13.azuredatabricks.net", "/sql/1.0/warehouses/b200136186af65c8", [Catalog = null, Database = null, QueryTags = null, EnableAutomaticProxyDiscovery = "enabled", Implementation = "2.0", MetricViewBiCompatibilityMode = null]),
+				  #"Navigation 1" = Source{[Name = "new_databricks", Kind = "Database"]}[Data],
+				  #"Navigation 2" = #"Navigation 1"{[Name = "default", Kind = "Schema"]}[Data]
+				in
+				  #"Navigation 2"
+
