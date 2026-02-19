@@ -42,43 +42,40 @@ pipeline {
         stage('Prepare Model Payload') {
             steps {
                 script {
-
+                    // १. pbism फाईल वाचताना 'params.MODEL_FOLDER' चा वापर करा
                     def pbismBase64 = sh(
-                        script: "base64 -w 0 ${params.MODEL_FOLDER}/definition.pbism",
+                        script: "base64 -w 0 ${params.MODEL_FOLDER}/definition.pbism", 
                         returnStdout: true
                     ).trim()
-
-                    def parts = [
-                        [
-                            path: "definition.pbism",
-                            payload: pbismBase64,
-                            payloadType: "InlineBase64"
-                        ]
-                    ]
-
-                    def tmdlFiles = sh(
-                        script: "find ${params.MODEL_FOLDER}/definition -name '*.tmdl'",
-                        returnStdout: true
-                    ).trim().split("\n")
-
+        
+                    // २. TMDL फाईल्स शोधताना सुद्धा फोल्डर पॅरामीटर वापरा
+                    def findCommand = "find ${params.MODEL_FOLDER}/definition -name '*.tmdl'"
+                    def findOut = sh(script: findCommand, returnStdout: true).trim()
+                    
+                    def tmdlFiles = findOut ? findOut.split("\n") : []
+        
+                    def parts = [[
+                        path: "definition.pbism",
+                        payload: pbismBase64,
+                        payloadType: "InlineBase64"
+                    ]]
+        
                     tmdlFiles.each { filePath ->
-
-                        def relativePath = filePath.substring(
-                            filePath.indexOf("definition/")
-                        )
-
+                        // फोल्डरच्या नावापासून पाथ काढण्यासाठी substring लॉजिक
+                        def relativePath = filePath.substring(filePath.indexOf("definition/"))
+        
                         def fileBase64 = sh(
                             script: "base64 -w 0 ${filePath}",
                             returnStdout: true
                         ).trim()
-
+        
                         parts << [
                             path: relativePath,
                             payload: fileBase64,
                             payloadType: "InlineBase64"
                         ]
                     }
-
+        
                     writeJSON file: 'model_payload.json',
                         json: [
                             displayName: "m9053-model",
