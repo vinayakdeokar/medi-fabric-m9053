@@ -1,28 +1,24 @@
 pipeline {
     agent any
 
-    parameters {
-        string(name: 'WORKSPACE_ID', description: 'Target Fabric Workspace ID')
-        string(name: 'SEMANTIC_MODEL_ID', description: 'Semantic Model Item ID')
-        string(name: 'MODEL_FOLDER', defaultValue: 'sm-m9053-dev-001.SemanticModel', description: 'Semantic Model Folder Path')
-        string(name: 'CONNECTION_ID', description: 'Databricks Connection ID')
-    }
-
     environment {
         CLIENT_ID     = credentials('FABRIC_CLIENT_ID')
         CLIENT_SECRET = credentials('FABRIC_CLIENT_SECRET')
         TENANT_ID     = credentials('FABRIC_TENANT_ID')
+
+        WORKSPACE_ID  = "40c8fdea-6f13-4617-a454-1f39fb3ce2a4"
+        MODEL_NAME    = "m9053-model"
+        MODEL_FOLDER  = "sm-m9053-dev-001.SemanticModel"
+        CONNECTION_ID = "f3519ff7-493e-4a2a-9020-57ffc1fd9bf5"
     }
 
     stages {
 
         stage('Checkout') {
-            steps {
-                checkout scm
-            }
+            steps { checkout scm }
         }
 
-        stage('Get Fabric Token') {
+        stage('Get Token') {
             steps {
                 script {
                     def tokenResponse = sh(script: """
@@ -39,46 +35,42 @@ pipeline {
             }
         }
 
-        stage('Prepare Model Payload') {
+        stage('Prepare Payload') {
             steps {
                 script {
-                    // १. pbism फाईल वाचताना 'params.MODEL_FOLDER' चा वापर करा
+
                     def pbismBase64 = sh(
-                        script: "base64 -w 0 ${params.MODEL_FOLDER}/definition.pbism", 
+                        script: "base64 -w 0 ${MODEL_FOLDER}/definition.pbism",
                         returnStdout: true
                     ).trim()
-        
-                    // २. TMDL फाईल्स शोधताना सुद्धा फोल्डर पॅरामीटर वापरा
-                    def findCommand = "find ${params.MODEL_FOLDER}/definition -name '*.tmdl'"
-                    def findOut = sh(script: findCommand, returnStdout: true).trim()
-                    
+
+                    def findOut = sh(
+                        script: "find ${MODEL_FOLDER}/definition -name '*.tmdl'",
+                        returnStdout: true
+                    ).trim()
+
                     def tmdlFiles = findOut ? findOut.split("\n") : []
-        
+
                     def parts = [[
                         path: "definition.pbism",
                         payload: pbismBase64,
                         payloadType: "InlineBase64"
                     ]]
-        
+
                     tmdlFiles.each { filePath ->
-                        // फोल्डरच्या नावापासून पाथ काढण्यासाठी substring लॉजिक
                         def relativePath = filePath.substring(filePath.indexOf("definition/"))
-        
-                        def fileBase64 = sh(
-                            script: "base64 -w 0 ${filePath}",
-                            returnStdout: true
-                        ).trim()
-        
+                        def fileBase64 = sh(script: "base64 -w 0 ${filePath}", returnStdout: true).trim()
+
                         parts << [
                             path: relativePath,
                             payload: fileBase64,
                             payloadType: "InlineBase64"
                         ]
                     }
-        
+
                     writeJSON file: 'model_payload.json',
                         json: [
-                            displayName: "m9053-model",
+                            displayName: MODEL_NAME,
                             type: "SemanticModel",
                             definition: [parts: parts]
                         ]
@@ -86,69 +78,94 @@ pipeline {
             }
         }
 
-        stage('Deploy Semantic Model') {
+        stage('Delete If Exists') {
             steps {
-                sh """
-                    curl -s -X POST \
-                    https://api.fabric.microsoft.com/v1/workspaces/${params.WORKSPACE_ID}/items/${params.SEMANTIC_MODEL_ID}/updateDefinition \
-                    -H "Authorization: Bearer ${env.TOKEN}" \
-                    -H "Content-Type: application/json" \
-                    -d @model_payload.json
-                """
+                script {
+                    def itemsResponse = sh(script: """
+                        curl -s -X GET \
+                        https://api.fabric.microsoft.com/v1/workspaces/${WORKSPACE_ID}/items \
+                        -H "Authorization: Bearer ${env.TOKEN}"
+                    """, returnStdout: true)
+
+                    def itemsJson = readJSON text: itemsResponse
+
+                    def existing = itemsJson.value.find {
+                        it.displayName == MODEL_NAME && it.type == "SemanticModel"
+                    }
+
+                    if (existing) {
+                        echo "Deleting existing model: ${existing.id}"
+                        sh """
+                            curl -s -X DELETE \
+                            https://api.fabric.microsoft.com/v1/workspaces/${WORKSPACE_ID}/items/${existing.id} \
+                            -H "Authorization: Bearer ${env.TOKEN}"
+                        """
+                    } else {
+                        echo "No existing model found"
+                    }
+                }
             }
         }
 
-        stage('Take Over Dataset') {
+        stage('Create Model') {
+            steps {
+                script {
+                    def createResponse = sh(script: """
+                        curl -s -X POST \
+                        https://api.fabric.microsoft.com/v1/workspaces/${WORKSPACE_ID}/items \
+                        -H "Authorization: Bearer ${env.TOKEN}" \
+                        -H "Content-Type: application/json" \
+                        -d @model_payload.json
+                    """, returnStdout: true)
+
+                    def createdJson = readJSON text: createResponse
+                    env.SEMANTIC_MODEL_ID = createdJson.id
+
+                    echo "Created Model ID: ${env.SEMANTIC_MODEL_ID}"
+                }
+            }
+        }
+
+        stage('Take Over') {
             steps {
                 sh """
                     curl -s -X POST \
-                    https://api.powerbi.com/v1.0/myorg/groups/${params.WORKSPACE_ID}/datasets/${params.SEMANTIC_MODEL_ID}/Default.TakeOver \
+                    https://api.powerbi.com/v1.0/myorg/groups/${WORKSPACE_ID}/datasets/${env.SEMANTIC_MODEL_ID}/Default.TakeOver \
                     -H "Authorization: Bearer ${env.TOKEN}" \
                     -H "Content-Length: 0"
                 """
             }
         }
 
-        stage('Bind Databricks Connection') {
+        stage('Bind Connection') {
             steps {
-                script {
-
-                    writeFile file: 'ds_payload.json', text: """
+                writeFile file: 'ds_payload.json', text: """
 {
   "updateDetails": [
     {
       "datasourceSelector": {
-        "datasourceType": "Extension",
-        "connectionDetails": {
-          "extensionDataSourceKind": "Databricks",
-          "extensionDataSourcePath": {
-            "host": "adb-7405618110977329.9.azuredatabricks.net",
-            "httpPath": "/sql/1.0/warehouses/334a2ae248719051"
-          }
-        }
+        "datasourceType": "Extension"
       },
-      "connectionId": "${params.CONNECTION_ID}"
+      "connectionId": "${CONNECTION_ID}"
     }
   ]
 }
 """
-
-                    sh """
-                        curl -s -X POST \
-                        https://api.powerbi.com/v1.0/myorg/groups/${params.WORKSPACE_ID}/datasets/${params.SEMANTIC_MODEL_ID}/Default.UpdateDatasources \
-                        -H "Authorization: Bearer ${env.TOKEN}" \
-                        -H "Content-Type: application/json" \
-                        -d @ds_payload.json
-                    """
-                }
+                sh """
+                    curl -s -X POST \
+                    https://api.powerbi.com/v1.0/myorg/groups/${WORKSPACE_ID}/datasets/${env.SEMANTIC_MODEL_ID}/Default.UpdateDatasources \
+                    -H "Authorization: Bearer ${env.TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d @ds_payload.json
+                """
             }
         }
 
-        stage('Trigger Refresh') {
+        stage('Refresh') {
             steps {
                 sh """
                     curl -s -X POST \
-                    https://api.powerbi.com/v1.0/myorg/groups/${params.WORKSPACE_ID}/datasets/${params.SEMANTIC_MODEL_ID}/refreshes \
+                    https://api.powerbi.com/v1.0/myorg/groups/${WORKSPACE_ID}/datasets/${env.SEMANTIC_MODEL_ID}/refreshes \
                     -H "Authorization: Bearer ${env.TOKEN}" \
                     -H "Content-Type: application/json" \
                     -d '{"type":"Full"}'
