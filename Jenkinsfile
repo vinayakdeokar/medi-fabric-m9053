@@ -6,9 +6,9 @@ pipeline {
     }
 
     environment {
-        FABRIC_CLIENT_ID     = credentials('fabric-client-id')
-        FABRIC_CLIENT_SECRET = credentials('fabric-client-secret')
-        FABRIC_TENANT_ID     = credentials('fabric-tenant-id')
+        FABRIC_CLIENT_ID     = credentials('FABRIC_CLIENT_ID')
+        FABRIC_CLIENT_SECRET = credentials('FABRIC_CLIENT_SECRET')
+        FABRIC_TENANT_ID     = credentials('FABRIC_TENANT_ID')
     }
 
     stages {
