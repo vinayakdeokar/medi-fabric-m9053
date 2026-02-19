@@ -40,28 +40,32 @@ pipeline {
                 '''
             }
         }
-
         stage('Get Workspace ID') {
             steps {
                 sh '''
                     TOKEN=$(cat token.txt)
-
-                    WORKSPACE_ID=$(curl -s -X GET \
+        
+                    echo "Looking for workspace: ${WORKSPACE_NAME}"
+        
+                    RESPONSE=$(curl -s -X GET \
                       -H "Authorization: Bearer $TOKEN" \
-                      https://api.powerbi.com/v1.0/myorg/groups | \
-                      jq -r ".value[] | select(.name==\"${WORKSPACE_NAME}\") | .id")
-
+                      https://api.powerbi.com/v1.0/myorg/groups)
+        
+                    WORKSPACE_ID=$(echo "$RESPONSE" | jq -r --arg NAME "${WORKSPACE_NAME}" '.value[] | select(.name==$NAME) | .id')
+        
                     if [ -z "$WORKSPACE_ID" ]; then
                         echo "Workspace not found!"
                         exit 1
                     fi
-
+        
                     echo $WORKSPACE_ID > workspace_id.txt
                     echo "Workspace ID: $WORKSPACE_ID"
                 '''
             }
         }
 
+
+        
         stage('Validation Complete') {
             steps {
                 sh '''
