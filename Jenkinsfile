@@ -4,7 +4,7 @@ pipeline {
     parameters {
         string(name: 'WORKSPACE_ID', description: 'Target Fabric Workspace ID')
         string(name: 'SEMANTIC_MODEL_ID', description: 'Semantic Model Item ID')
-        string(name: 'MODEL_FOLDER', defaultValue: 'semantic-models/m9053.SemanticModel', description: 'Semantic Model Folder Path')
+        string(name: 'MODEL_FOLDER', defaultValue: 'sm-m9053-dev-001.SemanticModel', description: 'Semantic Model Folder Path')
         string(name: 'CONNECTION_ID', description: 'Databricks Connection ID')
     }
 
