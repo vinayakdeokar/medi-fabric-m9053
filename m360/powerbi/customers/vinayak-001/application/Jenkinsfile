@@ -6,9 +6,9 @@ pipeline {
     }
 
     environment {
-        CLIENT_ID     = credentials('fabric-client-id')
-        CLIENT_SECRET = credentials('fabric-client-secret')
-        TENANT_ID     = "e5bd5a53-c0e6-481d-979a-84e799b283ab"
+        CLIENT_ID     = "${FABRIC_CLIENT_ID}"
+        CLIENT_SECRET = "${FABRIC_CLIENT_SECRET}"
+        TENANT_ID     = "${FABRIC_TENANT_ID}"
     }
 
     stages {
@@ -17,12 +17,14 @@ pipeline {
             steps {
                 script {
                     echo "Authenticating to Fabric..."
+
                     sh """
                     fab auth login \
-                      --client-id ${env.CLIENT_ID} \
-                      --client-secret ${env.CLIENT_SECRET} \
-                      --tenant-id ${env.TENANT_ID}
+                      --client-id ${CLIENT_ID} \
+                      --client-secret ${CLIENT_SECRET} \
+                      --tenant-id ${TENANT_ID}
                     """
+
                     sh "fab auth status"
                 }
             }
@@ -123,7 +125,6 @@ pipeline {
                     }
 
                     gatewayId = gw.id
-
                     echo "Gateway ID: ${gatewayId}"
 
                     def dsRaw = sh(
