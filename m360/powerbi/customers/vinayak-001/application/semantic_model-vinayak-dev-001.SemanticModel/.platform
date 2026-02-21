@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "semantic_model-vinayak-dev-001"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "dccf70c6-0246-80b8-4364-6bdff1232a27"
+  }
+}

@@ -1,0 +1,37 @@
+table default
+	lineageTag: 9b5140d8-712b-45aa-a285-2eb67580ce56
+
+	column Name
+		dataType: string
+		lineageTag: f0423ca2-b808-4461-b782-62f403d60d3f
+		summarizeBy: none
+		sourceColumn: Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Description
+		dataType: string
+		lineageTag: e1a6616c-6de9-446c-b0e0-27f3ac93122c
+		summarizeBy: none
+		sourceColumn: Description
+
+		annotation SummarizationSetBy = Automatic
+
+	column Kind
+		dataType: string
+		lineageTag: a8f3d862-ffe7-49db-a036-7719b4df9c95
+		summarizeBy: none
+		sourceColumn: Kind
+
+		annotation SummarizationSetBy = Automatic
+
+	partition default = m
+		mode: import
+		source =
+				let
+				  Source = Databricks.Catalogs("adb-7405615166056864.4.azuredatabricks.net", "/sql/1.0/warehouses/526e07068f40b392", [Catalog = null, Database = null, QueryTags = null, EnableAutomaticProxyDiscovery = "enabled", Implementation = "2.0", MetricViewBiCompatibilityMode = null]),
+				  #"Navigation 1" = Source{[Name = "medicareadv", Kind = "Database"]}[Data],
+				  #"Navigation 2" = #"Navigation 1"{[Name = "default", Kind = "Schema"]}[Data]
+				in
+				  #"Navigation 2"
+
