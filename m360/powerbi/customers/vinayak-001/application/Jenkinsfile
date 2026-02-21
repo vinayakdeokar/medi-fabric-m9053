@@ -1,68 +1,214 @@
 pipeline {
     agent any
 
+    parameters {
+        choice(name: 'ENV', choices: ['dev', 'uat'], description: 'Select Environment')
+    }
+
     environment {
-        TENANT_ID     = credentials('fabric-tenant-id')
         CLIENT_ID     = credentials('fabric-client-id')
         CLIENT_SECRET = credentials('fabric-client-secret')
-
-        DEV_WORKSPACE_ID = "73997867-9f59-4ece-a5c4-b4cbde1a07e9"
-        UAT_WORKSPACE_ID = "40c8fdea-6f13-4617-a454-1f39fb3ce2a4"
+        TENANT_ID     = "e5bd5a53-c0e6-481d-979a-84e799b283ab"
     }
 
     stages {
 
-        stage('Get Access Token') {
+        stage('Fabric Login') {
             steps {
                 script {
-                    env.TOKEN = sh(
-                        script: """
-                        curl -s -X POST https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token \
-                        -H "Content-Type: application/x-www-form-urlencoded" \
-                        -d "grant_type=client_credentials" \
-                        -d "client_id=${CLIENT_ID}" \
-                        -d "client_secret=${CLIENT_SECRET}" \
-                        -d "scope=https://analysis.windows.net/powerbi/api/.default" \
-                        | jq -r .access_token
-                        """,
-                        returnStdout: true
-                    ).trim()
+                    echo "Authenticating to Fabric..."
+                    sh """
+                    fab auth login \
+                      --client-id ${env.CLIENT_ID} \
+                      --client-secret ${env.CLIENT_SECRET} \
+                      --tenant-id ${env.TENANT_ID}
+                    """
+                    sh "fab auth status"
                 }
             }
         }
 
-        stage('Export Report from DEV') {
+        stage('Load Environment Config') {
             steps {
-                sh """
-                curl -L -X GET \
-                "https://api.powerbi.com/v1.0/myorg/groups/${DEV_WORKSPACE_ID}/reports/5be0ebe8-e3c6-4e86-a678-81ede8e6f154/Export" \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -o report.pbix
-                """
+                script {
+                    config = readJSON file: "config/${params.ENV}.json"
+
+                    workspaceId = config.workspaceId
+                    gatewayName = config.gatewayName
+
+                    echo "Environment: ${config.environment}"
+                    echo "Workspace ID: ${workspaceId}"
+                    echo "Gateway Name: ${gatewayName}"
+                }
             }
         }
 
-        stage('Import into UAT') {
+        stage('Deploy Semantic Model') {
             steps {
-                sh """
-                curl -X POST \
-                "https://api.powerbi.com/v1.0/myorg/groups/${UAT_WORKSPACE_ID}/imports?datasetDisplayName=uat-deploy&nameConflict=CreateOrOverwrite" \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -F "file=@report.pbix"
-                """
+                script {
+
+                    def modelName = "semantic_model-vinayak"
+                    def modelPath = "m360/powerbi/customers/vinayak-001/application/semantic_model-vinayak-dev-001.SemanticModel"
+
+                    echo "Deploying Semantic Model..."
+
+                    sh """
+                    fab item upsert \
+                      --workspace-id ${workspaceId} \
+                      --display-name "${modelName}" \
+                      --type SemanticModel \
+                      --source-path "${modelPath}"
+                    """
+
+                    def itemRaw = sh(
+                        script: "fab item ls ${workspaceId} --output json",
+                        returnStdout: true
+                    ).trim()
+
+                    def items = readJSON text: itemRaw
+                    def model = items.find { it.displayName == modelName && it.type == "SemanticModel" }
+
+                    if (!model) {
+                        error "Semantic Model not found after deployment."
+                    }
+
+                    modelId = model.id
+                    writeFile file: 'semantic_model_id.txt', text: modelId
+
+                    echo "Semantic Model ID: ${modelId}"
+                }
+            }
+        }
+
+        stage('Update Parameters') {
+            steps {
+                script {
+                    modelId = readFile('semantic_model_id.txt').trim()
+
+                    echo "Updating Databricks Parameters..."
+
+                    sh """
+                    fab item semantic-model update-parameters \
+                      --workspace-id ${workspaceId} \
+                      --item-id ${modelId} \
+                      --parameters '[
+                        {"name":"ServerName","newValue":"${config.server}"},
+                        {"name":"HTTPPath","newValue":"${config.httpPath}"}
+                      ]'
+                    """
+
+                    echo "Parameters Updated."
+                }
+            }
+        }
+
+        stage('Bind Gateway') {
+            steps {
+                script {
+
+                    modelId = readFile('semantic_model_id.txt').trim()
+
+                    echo "Fetching Gateway ID..."
+
+                    def gwRaw = sh(
+                        script: "fab gateway list --output json",
+                        returnStdout: true
+                    ).trim()
+
+                    def gateways = readJSON text: gwRaw
+                    def gw = gateways.find { it.displayName == gatewayName }
+
+                    if (!gw) {
+                        error "Gateway ${gatewayName} not found."
+                    }
+
+                    gatewayId = gw.id
+
+                    echo "Gateway ID: ${gatewayId}"
+
+                    def dsRaw = sh(
+                        script: "fab item semantic-model list-datasources --workspace-id ${workspaceId} --item-id ${modelId} --output json",
+                        returnStdout: true
+                    ).trim()
+
+                    def dsData = readJSON text: dsRaw
+
+                    if (dsData && dsData.size() > 0) {
+
+                        def dsId = dsData[0].datasourceId ?: dsData[0].id
+
+                        sh """
+                        fab item semantic-model bind-to-gateway \
+                          --workspace-id ${workspaceId} \
+                          --item-id ${modelId} \
+                          --gateway-id ${gatewayId} \
+                          --datasource-ids '["${dsId}"]'
+                        """
+
+                        echo "Gateway Binding Completed."
+
+                    } else {
+                        echo "No datasource found to bind."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Report') {
+            steps {
+                script {
+
+                    modelId = readFile('semantic_model_id.txt').trim()
+
+                    def reportName = "Master_Template_Report"
+                    def reportPath = "m360/powerbi/customers/vinayak-001/application/report-vinayak-dev-001.Report"
+
+                    def pbirPath = "${reportPath}/definition.pbir"
+                    def pbirJson = readJSON file: pbirPath
+
+                    pbirJson.datasetReference.byItem.itemId = modelId
+                    pbirJson.datasetReference.byItem.workspaceId = workspaceId
+
+                    writeJSON file: pbirPath, json: pbirJson
+
+                    echo "Deploying Report..."
+
+                    sh """
+                    fab item upsert \
+                      --workspace-id ${workspaceId} \
+                      --display-name "${reportName}" \
+                      --type Report \
+                      --source-path "${reportPath}"
+                    """
+
+                    echo "Report Deployment Completed."
+                }
             }
         }
 
         stage('Refresh Dataset') {
             steps {
-                sh """
-                curl -X POST \
-                "https://api.powerbi.com/v1.0/myorg/groups/${UAT_WORKSPACE_ID}/datasets/<UAT_DATASET_ID>/refreshes" \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Content-Type: application/json" \
-                -d '{}'
-                """
+                script {
+                    modelId = readFile('semantic_model_id.txt').trim()
+
+                    echo "Triggering Refresh..."
+
+                    sh """
+                    fab item semantic-model refresh \
+                      --workspace-id ${workspaceId} \
+                      --item-id ${modelId}
+                    """
+
+                    echo "Refresh Triggered."
+                }
             }
+        }
+    }
+
+    post {
+        always {
+            sh 'rm -f semantic_model_id.txt'
+            echo "Pipeline Finished Successfully."
         }
     }
 }
