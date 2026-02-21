@@ -1,0 +1,10 @@
+expression DB_HOST = "adb-7405615166056864.4.azuredatabricks.net" meta [IsParameterQuery = true, IsParameterQueryRequired = false, Type = type text]
+	lineageTag: 84fbdd54-7749-464e-a8b5-8aadc05b3e42
+
+	annotation PBI_ResultType = Text
+
+expression DB_WAREHOUSE = "526e07068f40b392" meta [IsParameterQuery = true, IsParameterQueryRequired = false, Type = type text]
+	lineageTag: 7f6947e8-1ef3-4718-8b4c-52c0111c7621
+
+	annotation PBI_ResultType = Text
+

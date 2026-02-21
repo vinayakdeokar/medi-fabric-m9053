@@ -29,9 +29,15 @@ table default
 		mode: import
 		source =
 				let
-				  Source = Databricks.Catalogs("adb-7405615166056864.4.azuredatabricks.net", "/sql/1.0/warehouses/526e07068f40b392", [Catalog = null, Database = null, QueryTags = null, EnableAutomaticProxyDiscovery = "enabled", Implementation = "2.0", MetricViewBiCompatibilityMode = null]),
+				  Source = Databricks.Catalogs(
+				    DB_HOST,
+				    "/sql/1.0/warehouses/" & DB_WAREHOUSE,
+				    [Catalog = null]
+				),
 				  #"Navigation 1" = Source{[Name = "medicareadv", Kind = "Database"]}[Data],
 				  #"Navigation 2" = #"Navigation 1"{[Name = "default", Kind = "Schema"]}[Data]
 				in
 				  #"Navigation 2"
+
+	annotation PBI_ResultType = Table
 

@@ -6,7 +6,7 @@ model Model
 		legacyRedirects
 		returnErrorValuesAsNull
 
-annotation PBI_QueryOrder = ["default"]
+annotation PBI_QueryOrder = ["default","DB_HOST","DB_WAREHOUSE"]
 
 annotation __PBI_TimeIntelligenceEnabled = 1
 
